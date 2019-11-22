@@ -179,6 +179,8 @@ class AppControllerTest() extends WordSpecLike
 
   private def retrieveAvailableGames:(UserCommandHandler, ActorRef, TestProbe) = {
     val (userCommandHandler, appController, testProbe) = login
+    appController ! Logged()
+    testProbe.expectMsgType[Logged]
     userCommandHandler menuSelection MenuChoice.createLobby
     testProbe.expectMsgType[RetrieveAvailableGames]
     (userCommandHandler, appController, testProbe)
@@ -193,6 +195,8 @@ class AppControllerTest() extends WordSpecLike
 
   private def retrieveAvailableLobbies:(UserCommandHandler, ActorRef, TestProbe) = {
     val (userCommandHandler, appController, testProbe) = login
+    appController ! Logged()
+    testProbe.expectMsgType[Logged]
     userCommandHandler menuSelection MenuChoice.joinLobby
     testProbe.expectMsgType[RetrieveAvailableLobbies]
     (userCommandHandler, appController, testProbe)
