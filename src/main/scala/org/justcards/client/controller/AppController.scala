@@ -22,23 +22,25 @@ object AppController {
   private[this] class AppControllerActor(connectionManager: ConnectionManager, viewFactory: ViewFactory) extends Actor
     with AppController {
 
+    import State._
+
     private val connectionManagerActor = context.actorOf(connectionManager(self))
     private val view: View = viewFactory(this)
-    private val stateHolder: Holder[State.Value] = Holder(State.INIT)
+    private var state: State.Value = INIT
     connectionManagerActor ! InitializeConnection
 
     override def receive: Receive = waitToBeConnected orElse default
 
     override def login(username: String): Unit = {
-      if (checkIfStateIs(State.CONNECTED)) {
+      if (state == CONNECTED) {
         changeContext(waitToBeLogged)
         connectionManagerActor ! LogIn(username)
       }
     }
 
     override def menuSelection(choice: MenuChoice.Value): Unit = {
-      if (checkIfStateIs(State.LOGGED))
-        choice match {
+      state match {
+        case LOGGED => choice match {
           case MenuChoice.createLobby =>
             changeContext(waitForAvailableGames)
             connectionManagerActor ! RetrieveAvailableGames()
@@ -47,25 +49,31 @@ object AppController {
             connectionManagerActor ! RetrieveAvailableLobbies()
           case _ => view error SELECTION_NOT_AVAILABLE
         }
+        case CONNECTED => view chooseNickname()
+      }
     }
 
     override def createLobby(game: GameId): Unit = {
-      if (checkIfStateIs(State.LOGGED)) {
-        changeContext(waitForLobbyCreation)
-        connectionManagerActor ! CreateLobby(game)
+      state match {
+        case LOGGED =>
+          changeContext(waitForLobbyCreation)
+          connectionManagerActor ! CreateLobby(game)
+        case CONNECTED => view chooseNickname()
       }
     }
 
     override def joinLobby(lobby: LobbyId): Unit = {
-      if (checkIfStateIs(State.LOGGED)) {
-        changeContext(waitForLobbyJoin)
-        connectionManagerActor ! JoinLobby(lobby)
+      state match {
+        case LOGGED =>
+          changeContext(waitForLobbyJoin)
+          connectionManagerActor ! JoinLobby(lobby)
+        case CONNECTED => view chooseNickname()
       }
     }
 
     private def waitToBeConnected: Receive = {
       case Connected =>
-        stateHolder set State.CONNECTED
+        state = State.CONNECTED
         context become default
         view chooseNickname()
       case ErrorOccurred(m) if m == CANNOT_CONNECT.toString =>
@@ -74,7 +82,7 @@ object AppController {
 
     private def waitToBeLogged: Receive = {
       case Logged(_) =>
-        stateHolder set State.LOGGED
+        state = State.LOGGED
         context become default
         view showMenu()
     }
@@ -87,7 +95,7 @@ object AppController {
 
     private def waitForLobbyCreation: Receive = {
       case LobbyCreated(lobby) =>
-        stateHolder set State.IN_LOBBY
+        state = State.IN_LOBBY
         changeContext(inLobby)
         view lobbyCreated lobby
     }
@@ -100,7 +108,7 @@ object AppController {
 
     private def waitForLobbyJoin: Receive = {
       case LobbyJoined(lobby, members) =>
-        stateHolder set State.IN_LOBBY
+        state = State.IN_LOBBY
         changeContext(inLobby)
         view lobbyJoined (lobby,members)
     }
@@ -140,15 +148,5 @@ object AppController {
     private[this] object State extends Enumeration {
       val INIT, CONNECTED, LOGGED, IN_LOBBY = Value
     }
-
-    private def checkIfStateIs(state: State.Value): Boolean = {
-      val currentState = stateHolder get()
-      currentState.isDefined && currentState.get == state
-    }
   }
-}
-
-case class Holder[X](private var element: X) {
-  def set(element: X): Unit = this.element = element
-  def get(): Option[X] = Option(element)
 }
